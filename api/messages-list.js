@@ -3,10 +3,11 @@ import { getRedis } from "./_redis";
 export default async function handler(req, res) {
   try {
     const redis = await getRedis();
+    const limit = Math.min(Number(req.query.limit || 50), 200);
 
-    const ids = await redis.lRange("messages", 0, 49);
-
+    const ids = await redis.lRange("messages", 0, limit - 1);
     const items = [];
+
     for (const id of ids) {
       const raw = await redis.get(`msg:${id}`);
       if (raw) items.push(JSON.parse(raw));
