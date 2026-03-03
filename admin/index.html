@@ -53,8 +53,8 @@ async function load() {
 }
 
 async function send() {
-  const to = document.getElementById('to').value;
-  const text = document.getElementById('text').value;
+  const to = document.getElementById('to').value.trim();
+  const text = document.getElementById('text').value.trim();
 
   const r = await fetch('/api/messages-reply.js', {
     method: 'POST',
@@ -62,8 +62,10 @@ async function send() {
     body: JSON.stringify({ to, text })
   });
 
+  const data = await r.json().catch(() => ({}));
+
   if (!r.ok) {
-    alert("Error sending");
+    alert("Send failed:\n" + JSON.stringify(data, null, 2));
     return;
   }
 
