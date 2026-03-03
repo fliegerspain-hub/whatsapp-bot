@@ -171,6 +171,23 @@ export default async function handler(req, res) {
     // log inbound
     await logToRedis({ direction: "in", from, to, text: incomingText });
 
+    try {
+      const host = req.headers["x-forwarded-host"] || req.headers.host;
+      const base = `https://${host}`;
+    
+      await fetch(`${base}/api/push-send.js`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "New WhatsApp message",
+          body: `${from.replace("whatsapp:", "")}: ${incomingText}`.slice(0, 120),
+          url: "/admin"
+        }),
+      });
+    } catch (e) {
+      // don't break WhatsApp flow
+      console.error("push trigger failed", e);
+    }
     // ---- Booking path ----
     if (/^book\b/i.test(incomingText)) {
       const tr = parseTimeRange(incomingText);
