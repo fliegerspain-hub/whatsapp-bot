@@ -5,6 +5,7 @@
   "dependencies": {
     "twilio": "^4.23.0",
     "openai": "^4.0.0",
-    "redis": "^4.6.7"
+    "redis": "^4.6.7",
+    "web-push": "^3.6.7"
   }
 }
