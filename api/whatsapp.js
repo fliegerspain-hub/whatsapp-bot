@@ -11,7 +11,7 @@ function readRawBody(req) {
 
 // ---- Cobot config (your provided IDs) ----
 const DEFAULT_RESOURCE_ID = "4782de63009254cf8e77d4082e43fd83";
-const FALLBACK_MEMBERSHIP_ID = "9157d08da1264f9d7b0c9d4cb8818173";
+const FALLBACK_MEMBERSHIP_ID = "9aebe8581ef133fa7aa3d48346665687";
 
 function parseTimeRange(text) {
   // "10:00-11:00" (spaces allowed)
