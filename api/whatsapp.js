@@ -14,7 +14,6 @@ function readRawBody(req) {
 const DEFAULT_RESOURCE_ID = "4782de63009254cf8e77d4082e43fd83";
 const FALLBACK_MEMBERSHIP_ID = "9aebe8581ef133fa7aa3d48346665687";
 
-// ---------- helpers ----------
 function parseTimeRange(text) {
   const m = text.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
   if (!m) return null;
@@ -54,7 +53,7 @@ function resolveDateYYYYMMDD(dateToken) {
   return null;
 }
 
-// DST-safe offset formatting for Europe/Madrid -> +0100/+0200
+// DST-safe conversion to Cobot datetime string with Madrid offset, like 2026-03-03T10:00:00+0100
 function getTimeZoneOffsetMinutes(date, timeZone) {
   const dtf = new Intl.DateTimeFormat("en-US", {
     timeZone,
@@ -142,19 +141,15 @@ async function cobotCreateBooking({ resource_id, membership_id, from, to, title 
   return { status: r.status, text };
 }
 
-// ---- Direct Redis logging ----
+// ✅ This is the function you asked about (inside whatsapp.js)
 async function logToRedis(msg) {
-  try {
-    const redis = await getRedis();
-    const id = crypto.randomUUID();
-    const record = { id, ts: Date.now(), ...msg };
+  const redis = await getRedis();
+  const id = crypto.randomUUID();
+  const record = { id, ts: Date.now(), ...msg };
 
-    await redis.set(`msg:${id}`, JSON.stringify(record));
-    await redis.lPush("messages", id);
-    await redis.lTrim("messages", 0, 499);
-  } catch (e) {
-    console.error("logToRedis failed:", e);
-  }
+  await redis.set(`msg:${id}`, JSON.stringify(record));
+  await redis.lPush("messages", id);
+  await redis.lTrim("messages", 0, 499);
 }
 
 export default async function handler(req, res) {
@@ -216,7 +211,7 @@ export default async function handler(req, res) {
       return;
     }
 
-    // ---- Normal chat path ----
+    // ---- Normal chat path (OpenAI) ----
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const completion = await openai.chat.completions.create({
