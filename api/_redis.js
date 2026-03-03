@@ -1,12 +1,16 @@
 import { createClient } from "redis";
 
-let client;
+let clientPromise;
 
-export async function getRedis() {
-  if (!client) {
-    client = createClient({ url: process.env.REDIS_URL });
+export function getRedis() {
+  if (!clientPromise) {
+    const client = createClient({ url: process.env.REDIS_URL });
     client.on("error", (err) => console.error("Redis error", err));
+
+    clientPromise = (async () => {
+      if (!client.isOpen) await client.connect();
+      return client;
+    })();
   }
-  if (!client.isOpen) await client.connect();
-  return client;
+  return clientPromise;
 }
