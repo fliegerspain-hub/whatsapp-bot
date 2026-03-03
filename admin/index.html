@@ -1,0 +1,78 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>WhatsApp Admin</title>
+  <style>
+    body { font-family: Arial; margin:20px; }
+    .msg { padding:10px; margin:8px 0; border-radius:10px; }
+    .in { background:#f3f3f3; }
+    .out { background:#dbeafe; }
+    textarea { width:100%; height:80px; }
+    button { padding:8px 12px; }
+  </style>
+</head>
+<body>
+
+<h2>WhatsApp Inbox</h2>
+
+<button onclick="load()">Refresh</button>
+<div id="list"></div>
+
+<hr/>
+
+<h3>Reply</h3>
+<input id="to" placeholder="whatsapp:+34..." style="width:100%"/>
+<br/><br/>
+<textarea id="text"></textarea>
+<br/>
+<button onclick="send()">Send</button>
+
+<script>
+async function load() {
+  const r = await fetch('/api/messages-list.js');
+  const data = await r.json();
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+
+  (data.items || []).reverse().forEach(m => {
+    const div = document.createElement('div');
+    div.className = 'msg ' + (m.direction === 'out' ? 'out' : 'in');
+    div.innerHTML = `
+      <b>${m.direction.toUpperCase()}</b> 
+      (${new Date(m.ts).toLocaleString()})<br/>
+      From: ${m.from}<br/>
+      To: ${m.to}<br/><br/>
+      ${m.text}
+    `;
+    div.onclick = () => {
+      document.getElementById('to').value = m.direction === 'in' ? m.from : m.to;
+    };
+    list.appendChild(div);
+  });
+}
+
+async function send() {
+  const to = document.getElementById('to').value;
+  const text = document.getElementById('text').value;
+
+  const r = await fetch('/api/messages-reply.js', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to, text })
+  });
+
+  if (!r.ok) {
+    alert("Error sending");
+    return;
+  }
+
+  document.getElementById('text').value = '';
+  load();
+}
+
+load();
+</script>
+
+</body>
+</html>
