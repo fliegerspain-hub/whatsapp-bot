@@ -2,123 +2,216 @@
 <html>
 <head>
   <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>WhatsApp Admin</title>
-  <style>
-    body { font-family: Arial; margin:20px; }
-    .msg { padding:10px; margin:8px 0; border-radius:10px; }
-    .in { background:#f3f3f3; }
-    .out { background:#dbeafe; }
-    textarea { width:100%; height:80px; }
-    button { padding:8px 12px; }
-  </style>
+
   <link rel="manifest" href="/admin/manifest.json">
   <meta name="theme-color" content="#ffffff">
+
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .row { display:flex; gap:10px; flex-wrap: wrap; align-items:center; }
+    button { padding:8px 12px; cursor:pointer; }
+    textarea { width:100%; height:90px; }
+    input { padding:8px; }
+
+    .msg { padding:10px; margin:8px 0; border-radius:10px; border: 1px solid #e5e7eb; }
+    .in { background:#f3f3f3; }
+    .out { background:#dbeafe; }
+    .meta { font-size: 12px; color:#555; margin-bottom:6px; }
+    .text { white-space: pre-wrap; }
+    .hint { font-size: 12px; color:#666; margin-top:6px; }
+
+    .topbar { position: sticky; top: 0; background: white; padding-bottom: 10px; }
+    hr { border: 0; border-top: 1px solid #eee; margin: 16px 0; }
+  </style>
 </head>
+
 <body>
+  <div class="topbar">
+    <h2 style="margin:0 0 10px 0;">WhatsApp Inbox</h2>
 
+    <div class="row">
+      <button onclick="load()">Refresh</button>
+      <button onclick="enablePush()">Enable Push</button>
+      <button onclick="testPush()">Test Push</button>
+      <span id="pushStatus" class="hint"></span>
+    </div>
 
-<h2>WhatsApp Inbox</h2>
+    <div class="hint">
+      iPhone: install via <b>Share → Add to Home Screen</b>, then open the installed app before enabling push.
+    </div>
 
-<button onclick="load()">Refresh</button>
-<button onclick="enablePush()">Enable Push</button>
-<div id="list"></div>
+    <hr/>
 
-<hr/>
+    <h3 style="margin:0 0 8px 0;">Reply</h3>
+    <input id="to" placeholder="To (e.g. whatsapp:+34...)" style="width:100%"/>
+    <br/><br/>
+    <textarea id="text" placeholder="Type your reply..."></textarea>
+    <br/>
+    <button onclick="send()">Send</button>
+  </div>
 
-<h3>Reply</h3>
-<input id="to" placeholder="whatsapp:+34..." style="width:100%"/>
-<br/><br/>
-<textarea id="text"></textarea>
-<br/>
-<button onclick="send()">Send</button>
+  <hr/>
+  <div id="list"></div>
+
 <script>
-function urlBase64ToUint8Array(base64String) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = atob(base64);
-  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
-}
-
-async function enablePush() {
-  // iOS requires "Add to Home Screen" to work reliably
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-    alert("Push not supported in this browser.");
-    return;
+  function setStatus(msg) {
+    document.getElementById("pushStatus").textContent = msg || "";
   }
 
-  const reg = await navigator.serviceWorker.register("/admin/sw.js");
-
-  const perm = await Notification.requestPermission();
-  if (perm !== "granted") {
-    alert("Notifications not enabled.");
-    return;
+  function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = atob(base64);
+    return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
   }
 
-  // Fetch VAPID public key from a tiny endpoint (we'll embed it below in Step 8)
-  const keyRes = await fetch("/api/push-vapid-public.js");
-  const { publicKey } = await keyRes.json();
+  async function enablePush() {
+    try {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        alert("Push not supported in this browser.");
+        return;
+      }
 
-  const sub = await reg.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(publicKey),
-  });
+      const reg = await navigator.serviceWorker.register("/admin/sw.js");
 
-  await fetch("/api/push-subscribe.js", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(sub),
-  });
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") {
+        alert("Notifications not enabled.");
+        return;
+      }
 
-  alert("✅ Push enabled!");
-}
+      // Hobby-plan-friendly single endpoint:
+      const keyRes = await fetch("/api/push.js?action=publicKey");
+      const { publicKey } = await keyRes.json();
+
+      if (!publicKey) {
+        alert("Missing VAPID public key on server (VAPID_PUBLIC_KEY env var).");
+        return;
+      }
+
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      });
+
+      const r = await fetch("/api/push.js?action=subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub),
+      });
+
+      const raw = await r.text();
+      if (!r.ok) {
+        alert("Subscribe failed:\n" + raw);
+        return;
+      }
+
+      setStatus("✅ Push enabled");
+      alert("✅ Push enabled!");
+    } catch (e) {
+      console.error(e);
+      alert("Enable push failed:\n" + String(e));
+    }
+  }
+
+  async function testPush() {
+    try {
+      const r = await fetch("/api/push.js?action=send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Test notification",
+          body: "If you see this, push works ✅",
+          url: "/admin"
+        }),
+      });
+
+      const raw = await r.text();
+      if (!r.ok) {
+        alert("Test push failed:\n" + raw);
+        return;
+      }
+
+      setStatus("✅ Test sent");
+    } catch (e) {
+      console.error(e);
+      alert("Test push failed:\n" + String(e));
+    }
+  }
+
+  async function load() {
+    const r = await fetch("/api/messages-list.js");
+    const data = await r.json();
+    const list = document.getElementById("list");
+    list.innerHTML = "";
+
+    const items = (data.items || []).slice().reverse();
+
+    if (!items.length) {
+      list.innerHTML = '<div class="hint">No messages yet.</div>';
+      return;
+    }
+
+    items.forEach((m) => {
+      const div = document.createElement("div");
+      div.className = "msg " + (m.direction === "out" ? "out" : "in");
+
+      const ts = m.ts ? new Date(m.ts).toLocaleString() : "";
+      div.innerHTML = `
+        <div class="meta"><b>${(m.direction || "unknown").toUpperCase()}</b> ${ts ? `(${ts})` : ""}</div>
+        <div class="meta">From: ${m.from || ""}<br/>To: ${m.to || ""}</div>
+        <div class="text">${(m.text || "").replace(/</g, "&lt;")}</div>
+        <div class="hint">Tip: click this message to set the reply target.</div>
+      `;
+
+      div.onclick = () => {
+        // click inbound -> reply to sender, click outbound -> reply to recipient
+        document.getElementById("to").value = (m.direction === "in") ? (m.from || "") : (m.to || "");
+      };
+
+      list.appendChild(div);
+    });
+  }
+
+  async function send() {
+    const to = document.getElementById("to").value.trim();
+    const text = document.getElementById("text").value.trim();
+
+    if (!to || !text) {
+      alert("Please fill in To and message text.");
+      return;
+    }
+
+    const r = await fetch("/api/messages-reply.js", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to, text }),
+    });
+
+    const raw = await r.text();
+    let data = {};
+    try { data = JSON.parse(raw); } catch {}
+
+    if (!r.ok) {
+      alert("Send failed:\n" + (Object.keys(data).length ? JSON.stringify(data, null, 2) : raw));
+      return;
+    }
+
+    document.getElementById("text").value = "";
+    await load();
+  }
+
+  // basic hint about current permission
+  (async () => {
+    try {
+      if ("Notification" in window) {
+        setStatus("Notifications: " + Notification.permission);
+      }
+    } catch {}
+    load();
+  })();
 </script>
-<script>
-async function load() {
-  const r = await fetch('/api/messages-list.js');
-  const data = await r.json();
-  const list = document.getElementById('list');
-  list.innerHTML = '';
-
-  (data.items || []).reverse().forEach(m => {
-    const div = document.createElement('div');
-    div.className = 'msg ' + (m.direction === 'out' ? 'out' : 'in');
-    div.innerHTML = `
-      <b>${m.direction.toUpperCase()}</b> 
-      (${new Date(m.ts).toLocaleString()})<br/>
-      From: ${m.from}<br/>
-      To: ${m.to}<br/><br/>
-      ${m.text}
-    `;
-    div.onclick = () => {
-      document.getElementById('to').value = m.direction === 'in' ? m.from : m.to;
-    };
-    list.appendChild(div);
-  });
-}
-
-async function send() {
-  const to = document.getElementById('to').value.trim();
-  const text = document.getElementById('text').value.trim();
-
-  const r = await fetch('/api/messages-reply.js', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ to, text })
-  });
-
-  const data = await r.json().catch(() => ({}));
-
-  if (!r.ok) {
-    alert("Send failed:\n" + JSON.stringify(data, null, 2));
-    return;
-  }
-
-  document.getElementById('text').value = '';
-  load();
-}
-
-load();
-</script>
-
 </body>
 </html>
