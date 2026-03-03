@@ -11,6 +11,8 @@
     textarea { width:100%; height:80px; }
     button { padding:8px 12px; }
   </style>
+  <link rel="manifest" href="/admin/manifest.json">
+  <meta name="theme-color" content="#ffffff">
 </head>
 <body>
 
@@ -27,7 +29,47 @@
 <textarea id="text"></textarea>
 <br/>
 <button onclick="send()">Send</button>
+<script>
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+}
 
+async function enablePush() {
+  // iOS requires "Add to Home Screen" to work reliably
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    alert("Push not supported in this browser.");
+    return;
+  }
+
+  const reg = await navigator.serviceWorker.register("/admin/sw.js");
+
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") {
+    alert("Notifications not enabled.");
+    return;
+  }
+
+  // Fetch VAPID public key from a tiny endpoint (we'll embed it below in Step 8)
+  const keyRes = await fetch("/api/push-vapid-public.js");
+  const { publicKey } = await keyRes.json();
+
+  const sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(publicKey),
+  });
+
+  await fetch("/api/push-subscribe.js", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(sub),
+  });
+
+  alert("✅ Push enabled!");
+}
+</script>
 <script>
 async function load() {
   const r = await fetch('/api/messages-list.js');
